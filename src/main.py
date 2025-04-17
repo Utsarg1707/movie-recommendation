@@ -1,5 +1,4 @@
 # app.py
-import os
 import json
 import streamlit as st
 from recommend import df, recommend_movies
