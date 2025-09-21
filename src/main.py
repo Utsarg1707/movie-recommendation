@@ -1,45 +1,109 @@
 # app.py
-import json
+
 import streamlit as st
-from recommend import df, recommend_movies
-from omdb_utils import get_movie_details
+import json
+from recommend import df, recommend_movies  # Assuming these are in your local files
+from omdb_utils import get_movie_details    # Assuming these are in your local files
 
+# --- CONFIGURATION ---
+# Load configuration from a JSON file for better management of secrets.
+try:
+    with open("config.json") as config_file:
+        config = json.load(config_file)
+    OMDB_API_KEY = config.get("OMDB_API_KEY")
+except (FileNotFoundError, KeyError):
+    st.error("🚨 `config.json` not found or `OMDB_API_KEY` is missing. Please create it.")
+    st.stop() # Halts the app execution if the API key is not available.
 
-config = json.load(open("config.json"))
-
-# OMDB api key
-OMDB_API_KEY = config["OMDB_API_KEY"]
-
+# --- PAGE SETUP ---
 st.set_page_config(
-    page_title="Movie Recommender",
-    page_icon="🎬",
-    layout="centered"
+    page_title="Cinematch",
+    page_icon="🍿",
+    layout="wide",  # Use the full page width
+    initial_sidebar_state="expanded"
 )
 
-st.title("🎬 Movie Recommender")
+# --- CACHING ---
+# Cache the data loading and movie list generation to run only once.
+@st.cache_data
+def get_movie_list():
+    """Returns a sorted list of unique movie titles."""
+    return sorted(df['title'].dropna().unique())
 
-# Using 'title' instead of 'song' now
-movie_list = sorted(df['title'].dropna().unique())
-selected_movie = st.selectbox("🎬 Select a movie:", movie_list)
+# Cache the API calls. This is a HUGE performance improvement.
+# The function will only run if the combination of movie_title and api_key is new.
+@st.cache_data
+def fetch_movie_details(movie_title, api_key):
+    """Fetches movie details from OMDB API and caches the result."""
+    return get_movie_details(movie_title, api_key)
 
-if st.button("🚀 Recommend Similar Movies"):
-    with st.spinner("Finding similar movies..."):
-        recommendations = recommend_movies(selected_movie)
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.title("🍿 Cinematch Recommender")
+    st.markdown("Find movies similar to your favorites!")
+
+    movie_list = get_movie_list()
+    selected_movie = st.selectbox(
+        "Type or select a movie from the dropdown:",
+        movie_list,
+        index=None, # Set default to None for a placeholder
+        placeholder="Select a movie...",
+    )
+
+    # Number of recommendations to show
+    num_recommendations = st.slider(
+        "Number of recommendations:",
+        min_value=5,
+        max_value=20,
+        value=10,
+        step=1
+    )
+
+    recommend_button = st.button("🚀 Find Similar Movies", use_container_width=True)
+
+
+# --- MAIN PAGE ---
+st.header(f"Recommendations for '{selected_movie}'" if selected_movie else "Discover Your Next Favorite Movie")
+
+# --- RECOMMENDATION LOGIC ---
+if recommend_button and selected_movie:
+    with st.spinner("Casting the recommendation spell... ✨"):
+        # Get a specified number of recommendations
+        recommendations = recommend_movies(selected_movie, num_recommendations)
+
         if recommendations is None or recommendations.empty:
-            st.warning("Sorry, no recommendations found.")
+            st.warning(f"Sorry, we couldn't find any recommendations for **{selected_movie}**.")
         else:
-            st.success("Top similar movies:")
-            for _, row in recommendations.iterrows():
-                movie_title = row['title']
-                plot, poster = get_movie_details(movie_title, OMDB_API_KEY)
+            # Display recommendations in a grid
+            st.success(f"Found {len(recommendations)} great matches for you!")
 
-                with st.container():
-                    col1, col2 = st.columns([1, 3])
-                    with col1:
-                        if poster != "N/A":
-                            st.image(poster, width=100)
-                        else:
-                            st.write("❌ No Poster Found")
-                    with col2:
-                        st.markdown(f"### {movie_title}")
-                        st.markdown(f"*{plot}*" if plot != "N/A" else "_Plot not available_")
+            # Define number of columns for the grid
+            cols = st.columns(5) # Create 5 columns
+            
+            # Iterate over recommendations and display them in columns
+            # +++ NEW CODE for app.py +++
+        # Iterate over recommendations and display them in columns
+        for idx, row in recommendations.iterrows():
+            movie_title = row['title']
+            
+            # 1. Unpack all three values from the cached function
+            plot, poster, rating = fetch_movie_details(movie_title, OMDB_API_KEY
+                                                       )
+
+            # Place each movie card in a column, cycling through the columns
+            with cols[idx % 5]:
+                with st.container(border=True):
+                    if poster != "N/A":
+                        st.image(poster, use_container_width=True)
+
+                    # Display title and rating
+                    st.markdown(f"**{movie_title}**")
+                    if rating != "N/A":
+                        st.caption(f"⭐ IMDb: {rating}") # 2. Display the rating!
+
+                    # Expander for the plot
+                    with st.expander("See Plot"):
+                        st.write(plot if plot != "N/A" else "Plot details not found.")
+else:
+    st.info("Select a movie from the sidebar and click the button to get started!")
