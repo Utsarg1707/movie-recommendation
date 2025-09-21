@@ -7,13 +7,15 @@ from omdb_utils import get_movie_details    # Assuming these are in your local f
 
 # --- CONFIGURATION ---
 # Load configuration from a JSON file for better management of secrets.
-try:
-    with open("config.json") as config_file:
-        config = json.load(config_file)
-    OMDB_API_KEY = config.get("OMDB_API_KEY")
-except (FileNotFoundError, KeyError):
-    st.error("🚨 `config.json` not found or `OMDB_API_KEY` is missing. Please create it.")
-    st.stop() # Halts the app execution if the API key is not available.
+# NEW CODE for src/main.py
+
+# Access the secret directly from Streamlit's secrets manager
+OMDB_API_KEY = st.secrets.get("OMDB_API_KEY")
+
+# Check if the secret was loaded correctly
+if not OMDB_API_KEY:
+    st.error("🚨 OMDB_API_KEY not found. Please add it to your Streamlit secrets.")
+    st.stop()
 
 # --- PAGE SETUP ---
 st.set_page_config(
